@@ -19,7 +19,7 @@ resource "render_service" "flask" {
   branch = "master"
 
   web_service_details = {
-    env    = "node"
+    env    = "python"
     region = "frankfurt"
     plan   = "starter"
     native = {

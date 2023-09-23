@@ -117,6 +117,29 @@ resource "render_service" "nextjs" {
   }
 }
 
+
+resource "render_service" "python_app" {
+  name   = "my_python_app"
+  repo   = "https://github.com/render-examples/flask-hello-world"
+  type   = "web_service"
+  branch = "master"
+
+  web_service_details = {
+    env    = "python"
+    region = "frankfurt"
+    plan   = "starter"
+    native = {
+      build_command = "pip install -r requirements.txt"
+      start_command = "gunicorn app:app"
+    }
+    disk = {
+      name = "my_app_data"
+      mount_path = "/my_app_data"
+      size_gb = 10
+    }
+  }
+}
+
 resource "render_service" "mongodb" {
   name = "mongodb"
   repo = "https://github.com/render-examples/mongodb"

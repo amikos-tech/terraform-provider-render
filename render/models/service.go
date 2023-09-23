@@ -28,6 +28,7 @@ type WebServiceDetails struct {
 	HealthCheckPath            types.String             `tfsdk:"health_check_path"`
 	Native                     *WebServiceDetailsNative `tfsdk:"native"`
 	Url                        types.String             `tfsdk:"url"`
+	Disk                       *Disk                    `tfsdk:"disk"`
 }
 
 type WebServiceDetailsNative struct {
