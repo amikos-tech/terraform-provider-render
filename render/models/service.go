@@ -89,6 +89,15 @@ func (s Service) FromResponse(response render.Service) Service {
 				StartCommand: fromStringOptional(native.StartCommand),
 			}
 		}
+		if details.Disk != nil {
+			service.WebServiceDetails.Disk = &Disk{
+				Name: fromStringOptional(details.Disk.Name),
+
+				// Hack because the OpenAPI doesn't specify these fields as return.. I should check this
+				MountPath: s.WebServiceDetails.Disk.MountPath,
+				SizeGB:    s.WebServiceDetails.Disk.SizeGB,
+			}
+		}
 	}
 
 	if serviceType == render.PrivateService {
@@ -323,6 +332,10 @@ func toWebServiceDetails(webServiceDetails *WebServiceDetails) (map[string]inter
 		}
 
 		details["envSpecificDetails"] = native
+	}
+
+	if webServiceDetails.Disk != nil {
+		details["disk"] = toDisk(webServiceDetails.Disk)
 	}
 
 	return details, nil

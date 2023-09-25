@@ -270,11 +270,11 @@ func (r *serviceEnvironmentResource) Delete(ctx context.Context, req resource.De
 	response, err := r.client.UpdateEnvVarsForServiceWithResponse(ctx, state.Service.ValueString(), variables)
 
 	if err != nil {
-		resp.Diagnostics.AddError("failed to update service variables", err.Error())
+		resp.Diagnostics.AddError("failed to update service variables1", err.Error())
 		return
 	}
 
-	if response.StatusCode() != http.StatusCreated {
+	if response.StatusCode() != http.StatusOK {
 		resp.Diagnostics.AddError("failed to update service variables", string(response.Body))
 		return
 	}

@@ -96,6 +96,7 @@ func (r *serviceResource) Schema(_ context.Context, req resource.SchemaRequest, 
 							"start_command": schema.StringAttribute{Optional: true},
 						},
 					},
+					"disk": disk,
 				},
 			},
 
