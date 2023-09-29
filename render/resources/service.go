@@ -67,6 +67,15 @@ func (r *serviceResource) Schema(_ context.Context, req resource.SchemaRequest, 
 		},
 	}
 
+	docker := schema.SingleNestedAttribute{
+		Optional: true,
+		Attributes: map[string]schema.Attribute{
+			"command": schema.StringAttribute{Optional: true},
+			"context": schema.StringAttribute{Optional: true},
+			"path":    schema.StringAttribute{Optional: true},
+		},
+	}
+
 	resp.Schema = schema.Schema{
 		Description: `Provider for service resource`,
 		Attributes: map[string]schema.Attribute{
@@ -75,8 +84,28 @@ func (r *serviceResource) Schema(_ context.Context, req resource.SchemaRequest, 
 			"type":        schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"branch":      schema.StringAttribute{Optional: true, Computed: true},
 			"auto_deploy": schema.BoolAttribute{Optional: true},
-			"repo":        schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+			"repo":        schema.StringAttribute{Optional: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 			"owner":       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
+			"env_vars": schema.ListNestedAttribute{
+				Description: "Service environment variable",
+				Optional:    true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"key":       schema.StringAttribute{Required: true},
+						"value":     schema.StringAttribute{Optional: true, Sensitive: true},
+						"generated": schema.BoolAttribute{Optional: true},
+					},
+				},
+			},
+			"image": schema.SingleNestedAttribute{
+				Description: "Service details for `image` type services.",
+				Optional:    true,
+				Attributes: map[string]schema.Attribute{
+					"image_path":             schema.StringAttribute{Required: true},
+					"owner_id":               schema.StringAttribute{Required: true},
+					"registry_credential_id": schema.StringAttribute{Optional: true},
+				},
+			},
 
 			"web_service_details": schema.SingleNestedAttribute{
 				Description: "Service details for `web_service` type services.",
@@ -96,7 +125,8 @@ func (r *serviceResource) Schema(_ context.Context, req resource.SchemaRequest, 
 							"start_command": schema.StringAttribute{Optional: true},
 						},
 					},
-					"disk": disk,
+					"disk":   disk,
+					"docker": docker,
 				},
 			},
 

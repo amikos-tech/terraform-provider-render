@@ -13,11 +13,19 @@ type Service struct {
 	Type                  types.String           `tfsdk:"type"`
 	Repo                  types.String           `tfsdk:"repo"`
 	Branch                types.String           `tfsdk:"branch"`
+	Image                 *ImageDetails          `tfsdk:"image"`
 	Owner                 types.String           `tfsdk:"owner"`
 	AutoDeploy            types.Bool             `tfsdk:"auto_deploy"`
 	WebServiceDetails     *WebServiceDetails     `tfsdk:"web_service_details"`
 	StaticSiteDetails     *StaticSiteDetails     `tfsdk:"static_site_details"`
 	PrivateServiceDetails *PrivateServiceDetails `tfsdk:"private_service_details"`
+	EnvVars               *[]EnvVar              `tfsdk:"env_vars"`
+}
+
+type EnvVar struct {
+	Key       types.String `tfsdk:"key"`
+	Value     types.String `tfsdk:"value"`
+	Generated types.Bool   `tfsdk:"generated"`
 }
 
 type WebServiceDetails struct {
@@ -29,6 +37,18 @@ type WebServiceDetails struct {
 	Native                     *WebServiceDetailsNative `tfsdk:"native"`
 	Url                        types.String             `tfsdk:"url"`
 	Disk                       *Disk                    `tfsdk:"disk"`
+	Docker                     *WebServiceDetailsDocker `tfsdk:"docker"`
+}
+
+type ImageDetails struct {
+	OwnerId              types.String `tfsdk:"owner_id"`
+	ImagePath            types.String `tfsdk:"image_path"`
+	RegistryCredentialId types.String `tfsdk:"registry_credential_id"`
+}
+type WebServiceDetailsDocker struct {
+	DockerCommand  types.String `tfsdk:"command"`
+	DockerContext  types.String `tfsdk:"context"`
+	DockerfilePath types.String `tfsdk:"path"`
 }
 
 type WebServiceDetailsNative struct {
@@ -62,12 +82,22 @@ func (s Service) FromResponse(response render.Service) Service {
 	serviceType := *response.Type
 
 	service := Service{
-		ID:     fromStringOptional(response.Id),
-		Name:   fromStringOptional(response.Name),
-		Type:   fromServiceType(response.Type),
-		Repo:   fromStringOptional(response.Repo),
-		Branch: fromStringOptional(response.Branch),
-		Owner:  fromStringOptional(response.OwnerId),
+		ID:         fromStringOptional(response.Id),
+		Name:       fromStringOptional(response.Name),
+		Type:       fromServiceType(response.Type),
+		Repo:       fromStringOptional(response.Repo),
+		Branch:     fromStringOptional(response.Branch),
+		Owner:      fromStringOptional(response.OwnerId),
+		AutoDeploy: fromBoolOptional(response.AutoDeploy, true), //sub-optimal
+		EnvVars:    s.EnvVars,
+	}
+
+	if response.ImagePath != nil {
+		service.Image = &ImageDetails{
+			OwnerId:              fromStringOptional(response.OwnerId),
+			ImagePath:            fromStringOptional(response.ImagePath),
+			RegistryCredentialId: fromStringOptional(response.RegistryCredentialId),
+		}
 	}
 
 	if serviceType == render.WebService {
@@ -83,7 +113,7 @@ func (s Service) FromResponse(response render.Service) Service {
 
 		native, err := details.EnvSpecificDetails.AsNativeEnvironmentDetails()
 
-		if err == nil {
+		if err == nil && s.WebServiceDetails.Native != nil {
 			service.WebServiceDetails.Native = &WebServiceDetailsNative{
 				BuildCommand: fromStringOptional(native.BuildCommand),
 				StartCommand: fromStringOptional(native.StartCommand),
@@ -96,6 +126,22 @@ func (s Service) FromResponse(response render.Service) Service {
 				// Hack because the OpenAPI doesn't specify these fields as return.. I should check this
 				MountPath: s.WebServiceDetails.Disk.MountPath,
 				SizeGB:    s.WebServiceDetails.Disk.SizeGB,
+			}
+		}
+		docker, err := details.EnvSpecificDetails.AsDockerDetails()
+		if err == nil {
+			dockerContext := fromStringOptional(docker.DockerContext)
+			if dockerContext == types.StringNull() || dockerContext == types.StringValue("") {
+				dockerContext = s.WebServiceDetails.Docker.DockerContext
+			}
+			dockerPath := fromStringOptional(docker.DockerfilePath)
+			if dockerPath == types.StringNull() || dockerPath == types.StringValue("") {
+				dockerPath = s.WebServiceDetails.Docker.DockerfilePath
+			}
+			service.WebServiceDetails.Docker = &WebServiceDetailsDocker{
+				DockerCommand:  fromStringOptional(docker.DockerCommand),
+				DockerContext:  dockerContext,
+				DockerfilePath: dockerPath,
 			}
 		}
 	}
@@ -140,9 +186,47 @@ func (s Service) ToServicePOST(ownerId string) (*render.ServicePOST, error) {
 	service := render.ServicePOST{
 		Type:    serviceType,
 		Name:    s.Name.ValueString(),
-		Repo:    s.Repo.ValueString(),
+		Repo:    stringOptionalNil(s.Repo),
 		Branch:  stringOptionalNil(s.Branch),
 		OwnerId: ownerId,
+	}
+
+	if s.Image != nil {
+		service.Image = &render.ImagePOST{
+			ImagePath:            s.Image.ImagePath.ValueString(),
+			OwnerId:              ownerId,
+			RegistryCredentialId: stringOptionalNil(s.Image.RegistryCredentialId),
+		}
+	}
+
+	if s.EnvVars != nil {
+		var envVars []render.ServicePOST_EnvVars_Item
+		for _, envVar := range *s.EnvVars {
+			item := render.ServicePOST_EnvVars_Item{}
+			if envVar.Generated.ValueBool() {
+				err := item.FromEnvVarKeyGenerateValue(render.EnvVarKeyGenerateValue{
+					Key:           envVar.Key.ValueString(),
+					GenerateValue: "true",
+				})
+
+				if err != nil {
+					return nil, err
+				}
+
+			} else {
+				err := item.FromEnvVarKeyValue(render.EnvVarKeyValue{
+					Key:   envVar.Key.ValueString(),
+					Value: envVar.Value.ValueString(),
+				})
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			envVars = append(envVars, item)
+
+		}
+		service.EnvVars = &envVars
 	}
 
 	serviceDetails := render.ServicePOST_ServiceDetails{}
@@ -338,6 +422,14 @@ func toWebServiceDetails(webServiceDetails *WebServiceDetails) (map[string]inter
 		details["disk"] = toDisk(webServiceDetails.Disk)
 	}
 
+	if webServiceDetails.Docker != nil {
+		details["envSpecificDetails"] = map[string]interface{}{
+			"dockerCommand":  webServiceDetails.Docker.DockerCommand.ValueString(),
+			"dockerContext":  webServiceDetails.Docker.DockerContext.ValueString(),
+			"dockerfilePath": webServiceDetails.Docker.DockerfilePath.ValueString(),
+		}
+	}
+
 	return details, nil
 }
 
@@ -410,6 +502,14 @@ func fromIntOptional(num *int) types.Int64 {
 	}
 
 	return types.Int64Value(int64(*num))
+}
+
+func fromBoolOptional(str *render.ServiceAutoDeploy, defaultVal bool) types.Bool {
+	if str == nil {
+		return types.BoolValue(defaultVal)
+	}
+
+	return types.BoolValue(*str == "yes" || *str == "true")
 }
 
 func fromStringOptional(str *string) types.String {
